@@ -1,38 +1,24 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 import logging
-import os
-import sys
 
 
-logging.basicConfig(level=logging.INFO)
+from logging_config import setup_logging
+from services import CommunicationService
+from dependencies import get_communication_service
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-def check_server_b() -> tuple[bool, str]:
-    host = os.getenv("SERVER_B_HOST")
-
-    if not host:
-        msg = "SERVER_B_HOST environment variable is not set"
-        logger.error(msg)
-        return False, "SERVER_B_HOST environment variable is not set"
-
-    param = "-n" if sys.platform.startswith("win") else "-c"
-    response = os.system(f"ping {param} 1 {host}")
-
-    if response == 0:
-        return True, host
-
-    msg = f"Ping to {host} failed"
-    logger.error(msg)
-    return False, msg
-
 
 @app.on_event("startup")
-def startup_event():
+def startup_event(communication_service: CommunicationService = 
+                  Depends(get_communication_service)):
+    
     logger.info("Starting API application...")
 
-    ok, msg = check_server_b()
+    ok, msg = communication_service.check_server_b()
 
     if not ok:
         raise ValueError(msg)
@@ -41,10 +27,12 @@ def startup_event():
 
 
 @app.get("/", status_code=200)
-def read_root():
+def read_root(communication_service: CommunicationService = 
+              Depends(get_communication_service)):
+    
     """Health check endpoint."""
 
-    host = get_host_name()
+    host = communication_service.server_b_host
 
     return {
         "status": "healthy",
@@ -54,14 +42,15 @@ def read_root():
 
 
 @app.get("/health", status_code=200)
-def health_check():
-    """Detailed health check including database connectivity."""
-    ok, msg = check_server_b()
+def health_check(communication_service: CommunicationService = 
+                  Depends(get_communication_service)):
+
+    ok, msg = communication_service.check_server_b()
 
     if not ok:
         raise HTTPException(status_code=503, detail=msg)
 
-    host = get_host_name()
+    host = communication_service.server_b_host
 
     return {
         "status": "healthy",
