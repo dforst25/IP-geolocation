@@ -1,23 +1,27 @@
 from fastapi import FastAPI, HTTPException, Depends
 import logging
+import uvicorn
 
 
 from logging_config import setup_logging
 from services import CommunicationService
 from dependencies import get_communication_service
+from routes import router
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+app.include_router(router)
+
 
 @app.on_event("startup")
-async def startup_event(communication_service: CommunicationService = 
-                  Depends(get_communication_service)):
+async def startup_event():
     
     logger.info("Starting API application...")
 
+    communication_service = get_communication_service() 
     ok, msg = await communication_service.check_server_b()
 
     if not ok:
@@ -58,3 +62,5 @@ async def health_check(communication_service: CommunicationService =
         "host": host
     }
 
+if __name__ == "__main__":
+    uvicorn.run("main:app", host='0.0.0.0', port=8001, reload=True)

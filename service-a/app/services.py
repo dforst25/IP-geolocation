@@ -1,9 +1,9 @@
 import logging
 from typing import Callable, Optional, Awaitable
-
+from pydantic import IPvAnyAddress
 
 from utils import safe_request, Response
-from models import IpLocation, Ip
+from models import IpLocation
 
 
 IP_LOC_URL = "http://ip-api.com/json/{}"
@@ -15,7 +15,7 @@ class CommunicationService:
     def __init__(self, server_b_host, server_b_port='', timeout=10):
 
 
-        self.__server_b_host = server_b_host
+        self.__server_b_host = 'http://' +server_b_host
 
         if server_b_port:
 
@@ -36,7 +36,7 @@ class CommunicationService:
 
      
         r: Response = await safe_request(method='get',url=self.server_b_host, 
-                                        timeout=self.__timeout)
+                                        timeout=10)
         if r.ok:
             return True, self.server_b_host
         
@@ -45,12 +45,17 @@ class CommunicationService:
         return False, r.error
 
     async def send_data_server_b(self, data):
-        return await safe_request(method='post', url=self.server_b_host+'/ip-geopoint', 
-                                  json=data, timeout=self.__timeout)
+        print(data)
+        return await safe_request(method='post', url=self.server_b_host+'/ip-geopoint/', 
+                                  json=data, timeout=10, headers={"Content-Type": "application/json"})
 
-    async def get_data_server_b(self, params: dict[str, Any]) -> Response:
-        return await safe_request(method='get', url=self.server_b_host+'/ip-geopoint', params=params,
-                                timeout=self.__timeout)
+    async def get_data_server_b(self, params: dict) -> Response:
+        if not params:
+            url = self.server_b_host+'/all-ip-geopoints/'
+        else:
+            url = self.server_b_host+'/ip-geopoint/'
+        return await safe_request(method='get', url=url, params=params,
+                                timeout=10)
         
 
 class LogicService:
@@ -62,15 +67,11 @@ class LogicService:
         self._get_server_b = get_callback
 
 
-    async def lookup_ip(self, ip: str) -> tuple[bool, dict | str]:
-
-        r: Response = await safe_request(method='get', url=IP_LOC_URL.format(ip))
-        if not r.ok:
-            return False, r.error
-        return True, r.data
+    async def lookup_ip(self, ip: IPvAnyAddress) -> Response:
+        return await safe_request(method='get', url=IP_LOC_URL.format(ip))
     
-    def create_location(self, ip: str, data: dict) -> IpLocation:
-        return IpLocation(ip=ip, lat=data['lat'], lon=data['lon'])
+    def create_location(self, ip: IPvAnyAddress, data: dict) -> IpLocation:
+        return IpLocation(ip=str(ip), geo_point={"lat": data['lat'], "lon": data['lon']})
     
     async def send_location(self, location: IpLocation) -> tuple[bool, str]:
         r: Response = await self._send_server_b(location.model_dump())
@@ -78,17 +79,31 @@ class LogicService:
             return False, r.error
         return True, "Data sent successfully"
 
-    async def get_data_server_b(self, ip: Optional[Ip]) -> Response:
+    async def process(self, ip: IPvAnyAddress) -> tuple[bool, str]:
+
+        r: Response = await self.lookup_ip(ip)
+
+        if not r.ok:
+            return False, r.error
+        
+        ip_loc = self.create_location(ip, r.data)
+        
+        return await self.send_location(ip_loc)
+
+
+    async def get_data_server_b(self, ip: Optional[IPvAnyAddress]) -> tuple[bool, list[IpLocation]|IpLocation]:
         param = {}
         if ip is not None:
-            param = {'ip': ip.ip}
+            param = {'ip': ip}
 
-        return await self._get_server_b(param)
+        r: Response = await self._get_server_b(param)
 
-    async def process(self, ip: str) -> tuple[bool, str]:
-        ok, data_or_error = await self.lookup_ip(ip)
-        if not ok:
-            return False, data_or_error
+        data =  r.data
 
-        location = self.create_location(ip, data_or_error)
-        return await self.send_location(location)
+        if not r.ok:
+            r = await self.lookup_ip(ip) if ip is not None else r
+        
+        data = self.create_location(ip, r.data) if ip is not None else r.data
+
+        return r.ok, data
+    

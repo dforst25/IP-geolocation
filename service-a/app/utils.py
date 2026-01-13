@@ -5,7 +5,7 @@ from collections import namedtuple
 Response = namedtuple('Response', ['ok', 'status_code', 'format', 'data', 'error'])
 
 
-async def detect_format(content_type: str) -> str:
+def detect_format(content_type: str) -> str:
     content_type = content_type.lower()
 
     if "application/json" in content_type:
@@ -17,13 +17,14 @@ async def detect_format(content_type: str) -> str:
     return "binary"
 
 
-async def safe_request(method, url, *, params=None, json=None, timeout=10) -> Response:
+async def safe_request(method, url, *,headers=None, params=None, json=None, timeout=10) -> Response:
     async with httpx.AsyncClient() as client:
 
         try:
             response = await client.request(
                 method=method,
                 url=url,
+                headers=headers,
                 params=params,
                 timeout=timeout,
                 json=json
@@ -49,7 +50,7 @@ async def safe_request(method, url, *, params=None, json=None, timeout=10) -> Re
                 error=None
             )
 
-        except httpx.RequestError as e:
+        except Exception as e:
             return Response(
                 ok=False,
                 status_code=None,
