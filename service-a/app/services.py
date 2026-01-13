@@ -1,9 +1,9 @@
 import logging
-from typing import Callable, Any
+from typing import Callable, Optional, Awaitable
 
 
 from utils import safe_request, Response
-from models import IpLocation
+from models import IpLocation, Ip
 
 
 IP_LOC_URL = "http://ip-api.com/json/{}"
@@ -27,7 +27,7 @@ class CommunicationService:
         return self.__server_b_host
 
 
-    def check_server_b(self) -> tuple[bool, str]:
+    async def check_server_b(self) -> tuple[bool, str]:
 
         if not self.server_b_host:
             msg = "SERVER_B_URL environment variable is not set"
@@ -35,7 +35,7 @@ class CommunicationService:
             return False, msg
 
      
-        r: Response = safe_request(method='get',url=self.server_b_host, 
+        r: Response = await safe_request(method='get',url=self.server_b_host, 
                                         timeout=self.__timeout)
         if r.ok:
             return True, self.server_b_host
@@ -44,28 +44,27 @@ class CommunicationService:
 
         return False, r.error
 
-    def send_data_server_b(self, data):
-        return safe_request(method='post', url=self.server_b_host, json=data,  
-                                timeout=self.__timeout)
+    async def send_data_server_b(self, data):
+        return await safe_request(method='post', url=self.server_b_host+'/ip-geopoint', 
+                                  json=data, timeout=self.__timeout)
 
-    
-    def get_data_server_b(self, params: dict[str, Any]) -> Response:
-        return safe_request(method='get', url=self.server_b_host, params=params,
+    async def get_data_server_b(self, params: dict[str, Any]) -> Response:
+        return await safe_request(method='get', url=self.server_b_host+'/ip-geopoint', params=params,
                                 timeout=self.__timeout)
         
 
 class LogicService:
     
-    def __init__(self, send_callback: Callable[[dict], Response], 
-                 get_callback: Callable[[dict], Response]):
+    def __init__(self, send_callback: Callable[[dict], Awaitable[Response]], 
+                 get_callback: Callable[[Optional[dict]], Awaitable[Response]]):
         
         self._send_server_b = send_callback
         self._get_server_b = get_callback
 
 
-    def lookup_ip(self, ip: str) -> tuple[bool, dict | str]:
+    async def lookup_ip(self, ip: str) -> tuple[bool, dict | str]:
 
-        r: Response = safe_request(method='get', url=IP_LOC_URL.format(ip))
+        r: Response = await safe_request(method='get', url=IP_LOC_URL.format(ip))
         if not r.ok:
             return False, r.error
         return True, r.data
@@ -73,22 +72,23 @@ class LogicService:
     def create_location(self, ip: str, data: dict) -> IpLocation:
         return IpLocation(ip=ip, lat=data['lat'], lon=data['lon'])
     
-
-    def send_location(self, location: IpLocation) -> tuple[bool, str]:
-        r: Response = self._send_server_b(location.model_dump())
+    async def send_location(self, location: IpLocation) -> tuple[bool, str]:
+        r: Response = await self._send_server_b(location.model_dump())
         if not r.ok:
             return False, r.error
         return True, "Data sent successfully"
 
+    async def get_data_server_b(self, ip: Optional[Ip]) -> Response:
+        param = {}
+        if ip is not None:
+            param = {'ip': ip.ip}
 
+        return await self._get_server_b(param)
 
-    def get_data_server_b(self, params: dict[str, Any]) -> Response:
-        return self._get_server_b(params)
-
-    def process(self, ip: str) -> tuple[bool, str]:
-        ok, data_or_error = self.lookup_ip(ip)
+    async def process(self, ip: str) -> tuple[bool, str]:
+        ok, data_or_error = await self.lookup_ip(ip)
         if not ok:
             return False, data_or_error
 
         location = self.create_location(ip, data_or_error)
-        return self.send_location(location)
+        return await self.send_location(location)
