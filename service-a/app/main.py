@@ -1,0 +1,66 @@
+from fastapi import FastAPI, HTTPException, Depends
+import logging
+import uvicorn
+
+
+from logging_config import setup_logging
+from services import CommunicationService
+from dependencies import get_communication_service
+from routes import router
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
+app = FastAPI()
+
+app.include_router(router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    
+    logger.info("Starting API application...")
+
+    communication_service = get_communication_service() 
+    ok, msg = await communication_service.check_server_b()
+
+    if not ok:
+        raise ValueError(msg)
+    
+    logger.info("API ready to accept requests")
+
+
+@app.get("/", status_code=200)
+async def read_root(communication_service: CommunicationService = 
+              Depends(get_communication_service)):
+    
+    """Health check endpoint."""
+
+    host = communication_service.server_b_host
+
+    return {
+        "status": "healthy",
+        "service": "Service A",
+        "service B host": host
+    }
+
+
+@app.get("/health", status_code=200)
+async def health_check(communication_service: CommunicationService = 
+                  Depends(get_communication_service)):
+
+    ok, msg = communication_service.check_server_b()
+
+    if not ok:
+        raise HTTPException(status_code=503, detail=msg)
+
+    host = communication_service.server_b_host
+
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "host": host
+    }
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host='0.0.0.0', port=8001, reload=True)
