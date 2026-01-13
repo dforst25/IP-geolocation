@@ -38,7 +38,7 @@ def store_ip_geopoint(ip_geo_point: IpGeoPoint) -> None:
     """Store an IP and its corresponding GeoPoint in Redis."""
     redis_conn = get_redis_connection()
     key = ip_geo_point.ip
-    value = f"{ip_geo_point.geo_point.x}, {ip_geo_point.geo_point.y}"
+    value = f"{ip_geo_point.geo_point.lat}, {ip_geo_point.geo_point.lon}"
     redis_conn.set(key, value)
     logger.info(f"Stored GeoPoint for IP {ip_geo_point.ip} in Redis.")
 
@@ -48,8 +48,8 @@ def retrieve_ip_geopoint(ip: str) -> GeoPoint | None:
     redis_conn = get_redis_connection()
     value = redis_conn.get(ip)
     if value:
-        x_str, y_str = value.split(", ")
-        geo_point = GeoPoint(x=float(x_str), y=float(y_str))
+        lat_str, lon_str = value.split(", ")
+        geo_point = GeoPoint(lat=float(lat_str), lon=float(lon_str))
         logger.info(f"Retrieved GeoPoint for IP {ip} from Redis.")
         return geo_point
     else:
@@ -68,7 +68,7 @@ def update_ip_geopoint(ip_geo_point: IpGeoPoint) -> None:
     """Update the GeoPoint for a given IP in Redis."""
     redis_conn = get_redis_connection()
     key = ip_geo_point.ip
-    value = f"{ip_geo_point.geo_point.x}, {ip_geo_point.geo_point.y}"
+    value = f"{ip_geo_point.geo_point.lat}, {ip_geo_point.geo_point.lon}"
     redis_conn.set(key, value)
     logger.info(f"Updated GeoPoint for IP {ip_geo_point.ip} in Redis.")
 
@@ -86,8 +86,8 @@ def get_all_ip_geopoints() -> list[IpGeoPoint]:
     result = []
     for key in keys:
         value = redis_conn.get(key)
-        x_str, y_str = value.split(", ")
-        geo_point = GeoPoint(x=float(x_str), y=float(y_str))
+        lat_str, lon_str = value.split(", ")
+        geo_point = GeoPoint(lat=float(lat_str), lon=float(lon_str))
         result.append(IpGeoPoint(ip=key, geo_point=geo_point))
     logger.info("Retrieved all IP and GeoPoint pairs from Redis.")
     return result
